@@ -1,0 +1,240 @@
+---
+title: "When Social Media Helps vs Harms Mental Health"
+format: html
+editor: visual
+---
+
+# *Big Idea*
+
+# When Social Media Helps vs Harms Mental Health
+
+Social media usage alone does not determine emotional wellbeing.\
+Instead, how people interact on social media plays a key role : higher interaction is associated with lower negative emotion, even at higher usage levels.
+
+#### Set Up
+
+```{r}
+library(tidyverse)
+library(plotly)
+library(sf)
+library(rnaturalearth)
+library(viridis)
+
+social <- read_csv("data/social_media.csv")
+happiness <- read_csv("data/world_happiness.csv")
+
+# Clean data
+social <- social %>%
+  mutate(Age = as.numeric(Age)) %>%
+  drop_na(Age) %>%
+  rename(Daily_Usage_Time = `Daily_Usage_Time (minutes)`)
+
+social_clean <- social %>%
+  drop_na(Daily_Usage_Time, Dominant_Emotion, Messages_Sent_Per_Day) %>%
+  mutate(
+    negative_emotion = ifelse(
+      Dominant_Emotion %in% c("Sadness", "Anxiety", "Anger"),
+      1, 0
+    ),
+    interaction_level = ifelse(
+      Messages_Sent_Per_Day > median(Messages_Sent_Per_Day),
+      "High Interaction",
+      "Low Interaction"
+    )
+  )
+```
+
+## EXPLORATORY ANALYSIS
+
+#### Usage Distribution :
+
+Most users spend between 60–120 minutes, but there are heavy users.
+
+This is an exploratory chart because it helps understand how usage is distributed before making conclusions. A histogram is used because usage time is continuous, and this chart shows common ranges and extreme users clearly.
+
+```{r}
+ggplot(social_clean, aes(x = Daily_Usage_Time)) +
+  geom_histogram(bins = 30, fill = "#4E79A7") +
+  labs(
+    title = "Distribution of Social Media Usage",
+    x = "Minutes per Day",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+#### Platform Differences
+
+Some platforms encourage heavier usage, especially Instagram.
+
+This is exploratory because it compares how usage varies across platforms. A boxplot is used instead of a bar chart because it shows spread and outliers, not just averages.
+
+```{r}
+ggplot(social_clean, aes(x = Platform, y = Daily_Usage_Time)) +
+  geom_boxplot(fill = "#A0CBE8") +
+  labs(
+    title = "Usage Time by Platform",
+    x = "Platform",
+    y = "Daily Usage (minutes)"
+  ) +
+  theme_minimal()
+```
+
+#### Emotions
+
+Both positive and negative emotions are common , not purely harmful.
+
+This chart explores emotional patterns. A bar chart is used because emotions are categorical, and this makes comparisons clear.
+
+```{r}
+ggplot(social_clean, aes(x = Dominant_Emotion)) +
+  geom_bar(fill = "#F28E2B") +
+  labs(
+    title = "Emotional States on Social Media",
+    x = "Emotion",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+While usage patterns vary, this does not yet explain emotional outcomes.\
+Next, we examine whether time spent or interaction level better explains negative emotions.
+
+## EXPLANATORY
+
+#### TIME vs EMOTION
+
+There is only a weak relationship between time and negative emotion.
+
+This is an explanatory chart because it tests the relationship between usage time and emotion. A scatter plot is used because it is best for showing relationships between two variables. Colour (red/green) is used to make emotional outcomes instantly clear.
+
+```{r}
+ggplot(social_clean, aes(x = Daily_Usage_Time, y = negative_emotion)) +
+  geom_jitter(aes(color = factor(negative_emotion)), height = 0.05, alpha = 0.6) +
+  geom_smooth(method = "lm", color = "black") +
+  scale_color_manual(values = c("0" = "green", "1" = "red"),
+                     labels = c("Positive/Neutral", "Negative")) +
+  labs(
+    title = "Does More Time Lead to Negative Emotion?",
+    x = "Daily Usage (minutes)",
+    y = "Negative Emotion",
+    color = "Emotion Type"
+  ) +
+  theme_minimal()
+```
+
+#### INTERACTION EFFECT
+
+Surprisingly, this shows that higher interaction is actually associated with slightly higher negative emotion.
+
+This suggests that not all interaction is positive — it could include things like arguments, pressure, or over-engagement
+
+This is the main explanatory chart as it directly supports the Big Idea. A bar chart is used because it compares two groups clearly. The data is aggregated to reduce noise and highlight the difference between interaction levels.
+
+```{r}
+interaction_summary <- social_clean %>%
+  group_by(interaction_level) %>%
+  summarise(avg_negative = mean(negative_emotion))
+
+p <- ggplot(interaction_summary, aes(x = interaction_level, y = avg_negative, fill = interaction_level)) +
+  geom_col() +
+  scale_fill_manual(values = c("High Interaction" = "green", "Low Interaction" = "red")) +
+  labs(
+    title = "Interaction VS  Negative Emotion",
+    x = "Interaction Level",
+    y = "Average Negative Emotion"
+  ) +
+  theme_minimal()
+
+ggplotly(p)
+ 
+```
+
+#### PLATFORM + EMOTION
+
+Some platforms are associated with higher negative emotion , not all platforms are equal
+
+This chart compares emotional outcomes across platforms. Reordering improves readability, and the colour gradient helps quickly identify which platforms are more associated with negative emotion.
+
+```{r}
+platform_emotion <- social_clean %>%
+  group_by(Platform) %>%
+  summarise(avg_negative = mean(negative_emotion))
+
+ggplot(platform_emotion, aes(x = reorder(Platform, avg_negative), y = avg_negative, fill = avg_negative)) +
+  geom_col() +
+  scale_fill_gradient(low = "green", high = "red") +
+  coord_flip() +
+  labs(
+    title = "Negative Emotion by Platform",
+    x = "Platform",
+    y = "Average Negative Emotion"
+  ) +
+  theme_minimal()
+```
+
+#### MAP
+
+This provides global context , wellbeing varies widely across countries
+
+This provides broader context. A map is used because geographic data is best understood spatially, allowing quick comparison between countries.
+
+```{r}
+# Check what columns exist (for safety)
+colnames(happiness)
+
+# Create country column IF it doesn't exist
+if (!"country" %in% colnames(happiness)) {
+  if ("Country or region" %in% colnames(happiness)) {
+    happiness <- happiness %>%
+      rename(country = `Country or region`)
+  } else if ("Country" %in% colnames(happiness)) {
+    happiness <- happiness %>%
+      rename(country = Country)
+  }
+}
+
+# Create happiness_score if needed
+if (!"happiness_score" %in% colnames(happiness)) {
+  if ("Score" %in% colnames(happiness)) {
+    happiness <- happiness %>%
+      rename(happiness_score = Score)
+  }
+}
+
+# Map
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+map_data <- world %>%
+  left_join(happiness, by = c("name" = "country"))
+
+ggplot(map_data) +
+  geom_sf(aes(fill = happiness_score), color = "white", size = 0.2) +
+  scale_fill_viridis_c(na.value = "grey90") +
+  labs(
+    title = "Global Happiness Levels",
+    fill = "Happiness Score"
+  ) +
+  theme_minimal()
+  
+```
+
+### Limitations
+
+There are a few limitations in this analysis.
+
+First, the social media data is self-reported, so it might not be fully accurate. People could be guessing how much time they spend online or how they feel, which can affect the results.
+
+Also, the dataset doesn’t include any location data, so I couldn’t properly link it to the global happiness dataset. Because of that, the map is more for general context rather than a direct comparison.
+
+Another thing is that emotions are simplified into categories like “happiness” or “anxiety”, which doesn’t really capture how complex emotions actually are in real life.
+
+Finally, the data only shows relationships, not cause and effect. For example, even though higher interaction is linked with lower negative emotion, that doesn’t necessarily mean interaction is the reason for it.
+
+### Conclusion
+
+\
+Social media is not simply harmful or beneficial.\
+The data shows that interaction level plays a more important role than usage time.\
+\
+Users who actively engage experience lower negative emotion, suggesting that meaningful interaction can offset potential negative effects of prolonged use.
